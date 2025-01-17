@@ -1,150 +1,101 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-from datetime import datetime, timedelta
-import matplotlib.pyplot as plt
-from statsmodels.tsa.seasonal import seasonal_decompose
-from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import numpy as np
-import logging
+import plotly.graph_objs as go
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+import matplotlib.pyplot as plt
+import datetime
 
-# Configure page
-st.set_page_config(
-    page_title="Stock Price Forecasting App",
-    page_icon="📈",
-    layout="wide"
-)
+# Function to fetch historical stock data
+def get_stock_data(ticker, start_date, end_date):
+    data = yf.download(ticker, start=start_date, end=end_date)
+    return data
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
+# Function to calculate RSI using pandas
+def calculate_rsi(data, period=14):
+    # Calculate daily price changes
+    delta = data['Close'].diff()
 
-# Functions from previous code
-@st.cache_data
-def fetch_stock_data(ticker, end_date=None):
-    if end_date is None:
-        end_date = datetime.now().date()
-    
-    start_date = end_date - timedelta(days=10 * 365)
-    
+    # Separate gains and losses
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+
+    # Calculate relative strength (RS)
+    rs = gain / loss
+
+    # Calculate RSI
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+# Function to forecast using SARIMAX
+def forecast_with_sarimax(data, exog_data, forecast_period=30):
     try:
-        data = yf.download(ticker, start=start_date, end=end_date, progress=False)
-        if data.empty:
-            st.error(f"No data found for ticker {ticker}.")
-            return None
-        return data
-    except Exception as e:
-        st.error(f"Error fetching data: {str(e)}")
-        return None
-
-def create_forecast_dataframe(forecast, start_date):
-    try:
-        forecast_dates = pd.date_range(start=start_date, periods=len(forecast), freq='B')
-        forecast_df = pd.DataFrame({
-            'Forecast_Date': forecast_dates,
-            'Forecasted_Close_Price': forecast
-        }).set_index('Forecast_Date')
-        return forecast_df
-    except Exception as e:
-        st.error(f"Error creating forecast DataFrame: {str(e)}")
-        return None
-
-def forecast_stock(data, forecast_period=30, column='Close'):
-    try:
-        train = data[column]
-        
-        model = ExponentialSmoothing(
-            train,
-            trend="add",
-            seasonal="mul",
-            seasonal_periods=252,
-            damped=True
+        model = SARIMAX(
+            data['Close'], 
+            exog=exog_data, 
+            order=(1, 1, 1), 
+            seasonal_order=(1, 1, 0, 5)
         )
-        fit = model.fit(optimized=True)
-        forecast = fit.forecast(forecast_period)
-        
-        tomorrow = datetime.now().date() + timedelta(days=1)
-        forecast_df = create_forecast_dataframe(forecast, tomorrow)
-        
-        return fit, forecast, forecast_df
+        model_fit = model.fit(disp=False)
+        forecast = model_fit.get_forecast(steps=forecast_period, exog=exog_data[-forecast_period:])
+        forecast_mean = forecast.predicted_mean
+        forecast_conf_int = forecast.conf_int()
+        return forecast_mean, forecast_conf_int
     except Exception as e:
-        st.error(f"Error in forecasting: {str(e)}")
-        return None, None, None
+        st.error(f"Error in SARIMAX forecasting: {e}")
+        return None, None
 
-# Streamlit UI
-def main():
-    st.title("📈 Stock Price Forecasting App")
-    st.write("Enter a stock ticker and forecast period to predict future stock prices.")
+# Function to plot stock data and forecast
+def plot_stock_data(data, forecast_mean, forecast_conf_int, forecast_period):
+    fig = go.Figure()
+
+    # Historical stock data plot
+    fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Historical Data'))
+
+    # Forecast plot
+    forecast_dates = pd.date_range(data.index[-1], periods=forecast_period+1, freq='B')[1:]
+    fig.add_trace(go.Scatter(x=forecast_dates, y=forecast_mean, mode='lines', name='Forecast', line=dict(color='red')))
     
-    # Sidebar inputs
-    st.sidebar.header("Input Parameters")
-    ticker = st.sidebar.text_input("Stock Ticker", value="AAPL").upper()
-    forecast_days = st.sidebar.slider("Forecast Period (Days)", 5, 90, 30)
+    # Confidence Interval
+    fig.add_trace(go.Scatter(x=forecast_dates, y=forecast_conf_int.iloc[:, 0], mode='lines', name='Lower CI', line=dict(color='red', dash='dash')))
+    fig.add_trace(go.Scatter(x=forecast_dates, y=forecast_conf_int.iloc[:, 1], mode='lines', name='Upper CI', line=dict(color='red', dash='dash')))
     
-    # Add a "Generate Forecast" button
-    if st.sidebar.button("Generate Forecast"):
-        # Show loading message
-        with st.spinner("Fetching stock data..."):
-            data = fetch_stock_data(ticker)
+    # Layout
+    fig.update_layout(title='Stock Price Forecasting using SARIMAX', xaxis_title='Date', yaxis_title='Price')
+    st.plotly_chart(fig)
+
+# Streamlit layout
+st.title("Stock Price Dashboard with SARIMAX Forecasting")
+
+# Interactive selection for stock ticker
+ticker = st.text_input("Enter Stock Ticker (e.g., AAPL, TSLA, MSFT):", "AAPL")
+start_date = st.date_input("Start Date", datetime.date(2010, 1, 1))
+end_date = st.date_input("End Date", datetime.date.today())
+
+# Fetch and display stock data
+if ticker:
+    data = get_stock_data(ticker, start_date, end_date)
+    
+    if data is not None and not data.empty:
+        st.write(f"Showing data for {ticker} from {start_date} to {end_date}")
+        st.dataframe(data.tail())  # Show latest 5 rows of data
+
+        # Calculate RSI and add to data
+        data['RSI'] = calculate_rsi(data)
         
-        if data is not None:
-            # Create two columns
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("Historical Data")
-                st.line_chart(data['Close'])
-            
-            # Perform forecasting
-            with st.spinner("Generating forecast..."):
-                model, forecast, forecast_df = forecast_stock(data, forecast_days)
-            
-            if forecast_df is not None:
-                with col2:
-                    st.subheader("Price Forecast")
-                    st.line_chart(forecast_df['Forecasted_Close_Price'])
-                
-                # Show forecast data in a table
-                st.subheader("Detailed Forecast")
-                st.dataframe(forecast_df)
-                
-                # Add download button for forecast data
-                csv = forecast_df.to_csv()
-                st.download_button(
-                    label="Download Forecast Data",
-                    data=csv,
-                    file_name=f"{ticker}_forecast.csv",
-                    mime="text/csv"
-                )
-                
-                # Show additional metrics
-                st.subheader("Current Statistics")
-                current_price = data['Close'].iloc[-1]
-                if isinstance(current_price, pd.Series):
-                    current_price = current_price.iloc[0]
-                last_forecast = forecast_df['Forecasted_Close_Price'].iloc[-1]
-                price_change = ((last_forecast - current_price) / current_price) * 100
-                
-                metric_col1, metric_col2, metric_col3 = st.columns(3)
-                with metric_col1:
-                    st.metric("Current Price", f"${current_price:.2f}")
-                with metric_col2:
-                    st.metric("Final Forecast", f"${last_forecast:.2f}")
-                with metric_col3:
-                    st.metric("Predicted Change", f"{price_change:.2f}%")
+        # Volume data
+        data['Volume'] = data['Volume']
+        
+        # Create Exogenous variables (RSI and Volume)
+        exog_data = data[['RSI', 'Volume']].dropna()
 
-                
-        else:
-            st.error("Please enter a valid stock ticker.")
-
-    # Add information about the app
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("""
-    ### About
-    This app uses historical stock data to forecast future prices using:
-    - Historical data from Yahoo Finance
-    - Exponential Smoothing for forecasting
-    - Business day forecasting
-    """)
-
-if __name__ == "__main__":
-    main()
+        # Forecasting section
+        forecast_period = st.slider("Select Forecast Period (days)", min_value=7, max_value=30, value=7)
+        
+        forecast_mean, forecast_conf_int = forecast_with_sarimax(data, exog_data, forecast_period)
+        
+        if forecast_mean is not None:
+            plot_stock_data(data, forecast_mean, forecast_conf_int, forecast_period)
+    else:
+        st.write("No data available for the selected ticker.")
