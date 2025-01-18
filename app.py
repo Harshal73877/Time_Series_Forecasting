@@ -81,7 +81,7 @@ def seasonal_decomposition(data):
 # Streamlit layout
 st.title("Stock Price Prediction Dashboard")
 st.sidebar.title("Stock Settings")
-
+st.warning("⚠️ **Important Disclaimer:** This application is for **educational purposes only**. Stock market investments are subject to **market risks**. Please consult a financial advisor before making any investment decisions.")
 # Interactive selection for stock ticker and dates
 ticker = st.sidebar.text_input("Enter Stock Ticker Symbol (e.g., AAPL, TSLA, MSFT):", "AAPL")
 start_date = st.sidebar.date_input("Start Date", datetime(2015, 1, 1))
