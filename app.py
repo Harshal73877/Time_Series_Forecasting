@@ -12,33 +12,13 @@ def get_stock_data(ticker, start_date, end_date):
     data = yf.download(ticker, start=start_date, end=end_date)
     return data
 
-# Function to calculate RSI using pandas
-def calculate_rsi(data, period=14):
-    # Calculate daily price changes
-    delta = data['Close'].diff()
-
-    # Separate gains and losses
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-
-    # Calculate relative strength (RS)
-    rs = gain / loss
-
-    # Calculate RSI
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
-
 # Function to forecast using SARIMAX
-def forecast_with_sarimax(data, exog_data, forecast_period=30):
+def forecast_with_sarimax(data, forecast_period=30):
+    # Get the SARIMAX parameters, here you can adjust them as needed
     try:
-        model = SARIMAX(
-            data['Close'], 
-            exog=exog_data, 
-            order=(1, 1, 1), 
-            seasonal_order=(1, 1, 0, 5)
-        )
+        model = SARIMAX(data['Close'], order=(1, 1, 1), seasonal_order=(1, 1, 0, 5))
         model_fit = model.fit(disp=False)
-        forecast = model_fit.get_forecast(steps=forecast_period, exog=exog_data[-forecast_period:])
+        forecast = model_fit.get_forecast(steps=forecast_period)
         forecast_mean = forecast.predicted_mean
         forecast_conf_int = forecast.conf_int()
         return forecast_mean, forecast_conf_int
@@ -81,19 +61,10 @@ if ticker:
         st.write(f"Showing data for {ticker} from {start_date} to {end_date}")
         st.dataframe(data.tail())  # Show latest 5 rows of data
 
-        # Calculate RSI and add to data
-        data['RSI'] = calculate_rsi(data)
-        
-        # Volume data
-        data['Volume'] = data['Volume']
-        
-        # Create Exogenous variables (RSI and Volume)
-        exog_data = data[['RSI', 'Volume']].dropna()
-
         # Forecasting section
         forecast_period = st.slider("Select Forecast Period (days)", min_value=7, max_value=30, value=7)
         
-        forecast_mean, forecast_conf_int = forecast_with_sarimax(data, exog_data, forecast_period)
+        forecast_mean, forecast_conf_int = forecast_with_sarimax(data, forecast_period)
         
         if forecast_mean is not None:
             plot_stock_data(data, forecast_mean, forecast_conf_int, forecast_period)
