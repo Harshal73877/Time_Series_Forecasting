@@ -2,12 +2,25 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 from statsmodels.tsa.seasonal import seasonal_decompose
 import plotly.graph_objs as go
 from datetime import datetime, timedelta
 import io
+
+# Predefined stock tickers for searching (you can expand this list or use an API for dynamic fetching)
+stock_ticker_list = {
+    "Apple": "AAPL",
+    "Microsoft": "MSFT",
+    "Tesla": "TSLA",
+    "Amazon": "AMZN",
+    "Google": "GOOGL",
+    "Facebook (Meta)": "META",
+    "Netflix": "NFLX",
+    "NVIDIA": "NVDA",
+    "Intel": "INTC",
+    "Disney": "DIS"
+}
 
 # Function to fetch historical stock data
 def fetch_stock_data(ticker, start_date=None, end_date=None):
@@ -82,8 +95,19 @@ def seasonal_decomposition(data):
 st.title("Stock Price Prediction Dashboard")
 st.sidebar.title("Stock Settings")
 
-# Interactive selection for stock ticker and dates
-ticker = st.sidebar.text_input("Enter Stock Ticker Symbol (e.g., AAPL, TSLA, MSFT):", "AAPL")
+# Interactive stock search and selection
+st.sidebar.subheader("Search for a Stock")
+search_query = st.sidebar.text_input("Enter a company name or symbol:", "")
+
+# Filter the stock ticker list based on search query
+filtered_stocks = {name: ticker for name, ticker in stock_ticker_list.items() if search_query.lower() in name.lower() or search_query.lower() in ticker.lower()}
+
+selected_stock = st.sidebar.selectbox("Select a Stock:", options=list(filtered_stocks.keys()), index=0 if filtered_stocks else -1)
+
+# Get the ticker symbol of the selected stock
+ticker = filtered_stocks[selected_stock] if selected_stock else None
+
+# Date range selection
 start_date = st.sidebar.date_input("Start Date", datetime(2015, 1, 1))
 end_date = st.sidebar.date_input("End Date", datetime.now().date())
 
@@ -92,7 +116,7 @@ if ticker:
     data = fetch_stock_data(ticker, start_date, end_date)
     
     if data is not None and not data.empty:
-        st.write(f"Showing data for {ticker} from {start_date} to {end_date}")
+        st.write(f"Showing data for {selected_stock} ({ticker}) from {start_date} to {end_date}")
         st.dataframe(data.tail())  # Show the last 5 rows of the data
         
         # Seasonal decomposition
@@ -116,6 +140,6 @@ if ticker:
                 "Upper CI": forecast_conf_int.iloc[:, 1]
             })
             csv = forecast_df.to_csv(index=False)
-            st.download_button(label="Download Forecast Data as CSV", data=csv, file_name="forecast_data.csv", mime="text/csv")
+            st.download_button(label="Download Forecast Data as CSV", data=csv, file_name=f"{ticker}_forecast_data.csv", mime="text/csv")
     else:
-        st.error("No data available for the selected ticker.")
+        st.error("No data available for the selected stock.")
