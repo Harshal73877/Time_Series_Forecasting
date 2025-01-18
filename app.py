@@ -83,10 +83,12 @@ st.title("Stock Price Prediction Dashboard")
 st.sidebar.title("Stock Settings")
 st.warning("⚠️ **Important Disclaimer:** This application is for **educational purposes only**. Stock market investments are subject to **market risks**. Please consult a financial advisor before making any investment decisions.")
 # Interactive selection for stock ticker and dates
+
 ticker = st.sidebar.text_input("Enter Stock Ticker Symbol (e.g., AAPL, TSLA, MSFT):", "AAPL")
+st.sidebar.markdown("<small>Choose the date range to fetch historical stock market data:</small>", unsafe_allow_html=True)
 start_date = st.sidebar.date_input("Start Date", datetime(2015, 1, 1))
 end_date = st.sidebar.date_input("End Date", datetime.now().date())
-st.sidebar.title("The Start Date and End Date are essential for defining the time range for which you want to fetch historical stock market data.")
+
 # Fetch and display stock data
 if ticker:
     data = fetch_stock_data(ticker, start_date, end_date)
